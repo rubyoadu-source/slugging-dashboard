@@ -23,11 +23,46 @@ from consolidate import consolidate_scenarios
 from ingest import load_workbook_scenarios
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(HERE, 'data', 'training_data.csv')
 BUNDLE_PATH = os.path.join(HERE, 'artifacts', 'models_full.joblib')
 
 st.set_page_config(page_title='SlugGuard | Flow assurance decision support',
                    page_icon='🌊', layout='wide')
+
+
+def list_repo_files(limit=80):
+    out = []
+    for root, dirs, files in os.walk(HERE):
+        dirs[:] = sorted(d for d in dirs if d not in ('__pycache__', '.git'))
+        for f in sorted(files):
+            out.append(os.path.relpath(os.path.join(root, f), HERE))
+    return out[:limit]
+
+
+def find_training_csv():
+    """data/training_data.csv if it is there; otherwise any file that looks like it
+    (Linux paths are case-sensitive and the GitHub web uploader can flatten folders)."""
+    exact = os.path.join(HERE, 'data', 'training_data.csv')
+    if os.path.exists(exact):
+        return exact
+    hits = []
+    for root, dirs, files in os.walk(HERE):
+        dirs[:] = [d for d in dirs if d not in ('__pycache__', '.git')]
+        for f in files:
+            name = f.lower().replace(' ', '')
+            if name.startswith('training') and name.endswith('.csv'):
+                hits.append(os.path.join(root, f))
+    return sorted(hits, key=len)[0] if hits else None
+
+
+DATA_PATH = find_training_csv()
+if DATA_PATH is None or os.path.getsize(DATA_PATH) < 1000:
+    st.error('The training data file was not found (or is empty): expected `data/training_data.csv` '
+             'in the repository, next to `app.py`.')
+    st.markdown('Files the app can see in the repository:')
+    st.code('\n'.join(list_repo_files()))
+    st.markdown('Check that the folder is called exactly `data` (lower case) and holds `training_data.csv`, '
+                'then reboot the app from the Streamlit menu.')
+    st.stop()
 
 CLASS_COL = {sc.CLASS_SEVERE: '#e5484d', sc.CLASS_STABLE: '#30a46c', sc.CLASS_TRANS: '#f5a524'}
 CLASS_RGBA = {sc.CLASS_SEVERE: 'rgba(229,72,77,0.55)', sc.CLASS_STABLE: 'rgba(48,164,108,0.55)',
