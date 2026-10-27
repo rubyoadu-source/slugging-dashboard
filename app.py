@@ -7,6 +7,7 @@ What it does : classifies the CURRENT record into a proxy flow-stability class w
 What it is NOT: a forecast, a validated slugging detector, or a control system.
 Run locally  : streamlit run app.py
 """
+import html
 import io
 import os
 import tempfile
@@ -71,14 +72,26 @@ TEAL = '#2dd4bf'
 
 st.markdown("""
 <style>
-.block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
-.sg-banner {background:#162338;border:1px solid #243752;border-radius:10px;padding:.55rem .9rem;
-            color:#b9c7da;font-size:.82rem;letter-spacing:.03em;margin-bottom:.8rem;}
-.sg-card {background:#111c2e;border:1px solid #1f2d44;border-radius:12px;padding:.7rem .9rem;height:100%;}
-.sg-label {color:#8ea0b8;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;}
-.sg-value {font-size:1.3rem;font-weight:700;margin-top:.1rem;line-height:1.25;}
-.sg-sub {color:#8ea0b8;font-size:.78rem;margin-top:.1rem;}
-.sg-priority {border-radius:12px;padding:.7rem 1rem;margin:.7rem 0 .4rem 0;font-weight:600;}
+.block-container {padding-top: 1.1rem; padding-bottom: 1.2rem; max-width: 1500px;}
+.sg-top {display:flex; justify-content:space-between; align-items:center; margin-bottom:.7rem;}
+.sg-title {font-size:1.3rem; font-weight:700; letter-spacing:.01em;}
+.sg-title span {color:#7f90a8; font-weight:400; font-size:.9rem; margin-left:.5rem;}
+.sg-pill {display:inline-block; border:1px solid #2a3b57; color:#9fb0c7; border-radius:999px;
+          padding:.15rem .65rem; font-size:.68rem; letter-spacing:.08em; margin-left:.4rem; cursor:help;}
+.sg-h {color:#7f90a8; font-size:.68rem; text-transform:uppercase; letter-spacing:.1em; margin-bottom:.35rem;}
+.sg-hero {border-radius:16px; padding:1rem 1.3rem; min-height:150px;}
+.sg-state {font-size:1.75rem; font-weight:800; line-height:1.1;}
+.sg-sub2 {color:#d3dcea; font-size:1rem; margin-top:.3rem;}
+.sg-meta {color:#7f90a8; font-size:.78rem; margin-top:.9rem;}
+.sg-chip {display:inline-block; background:#121e32; border:1px solid #223350; color:#c6d2e4;
+          border-radius:999px; padding:.18rem .65rem; font-size:.78rem; margin:0 .35rem .35rem 0; cursor:default;}
+.sg-dot {display:inline-block; width:.5rem; height:.5rem; border-radius:50%; margin-right:.4rem;}
+.sg-card {background:#0f1a2c; border:1px solid #1c2c46; border-radius:16px; padding:.9rem 1.1rem;}
+.sg-list {margin:.2rem 0 .5rem 0; padding-left:1.1rem; color:#c6d2e4; font-size:.88rem;}
+.sg-opt {border-top:1px solid #1c2c46; padding:.45rem 0; font-size:.9rem;}
+.sg-opt details {color:#8ea0b8; font-size:.8rem; margin-top:.15rem;}
+.sg-opt summary {cursor:pointer;}
+.sg-foot {color:#6f819a; font-size:.72rem; margin-top:.4rem;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -143,12 +156,6 @@ def loso_cached(min_time):
 
 
 # ---------------------------------------------------------------- small helpers
-def card(label, value, sub='', colour=None):
-    style = f' style="color:{colour}"' if colour else ''
-    return (f'<div class="sg-card"><div class="sg-label">{label}</div>'
-            f'<div class="sg-value"{style}>{value}</div><div class="sg-sub">{sub}</div></div>')
-
-
 def normalise_columns(df):
     mapping = {}
     lower = {t.lower(): t for t in sc.FEATURES}
@@ -174,16 +181,16 @@ def settings_widgets(gas_lift_known, choke_known):
 
 
 # ---------------------------------------------------------------- sidebar: data source
-st.sidebar.markdown('### 🌊 SlugGuard')
-source = st.sidebar.radio('Data source', ['Demo scenarios', 'Upload CSV', 'Upload OLGA workbook'])
+source = st.sidebar.radio('Data', ['Demo scenarios', 'Upload CSV', 'Upload OLGA workbook'])
 
 held_out, df, label, notes = None, None, '', []
 
 if source == 'Demo scenarios':
     sid = st.sidebar.selectbox('Scenario', list(SCEN_DESC.keys()), format_func=lambda s: SCEN_DESC[s])
-    view_mode = st.sidebar.radio('Model view', ['Honest: never saw this scenario',
-                                                'In-sample: trained on all nine'])
-    held_out = sid if view_mode.startswith('Honest') else None
+    honest = st.sidebar.toggle('Honest view', value=True,
+                               help='On: the models were trained WITHOUT this scenario. '
+                                    'Off: trained on all nine, so they look better than they will on a new case.')
+    held_out = sid if honest else None
     df = TRAIN[TRAIN['scenario_id'] == sid].sort_values('TIME_h').reset_index(drop=True)
     label = SCEN_DESC[sid]
 
@@ -268,18 +275,22 @@ def _step():
     st.session_state['pos'] = min(st.session_state['pos'] + 1, st.session_state['n'] - 1)
 
 
-# ---------------------------------------------------------------- sidebar: replay controls
+# ---------------------------------------------------------------- sidebar: replay (compact)
 st.sidebar.markdown('---')
-st.sidebar.markdown('**Replay (simulated live stream)**')
 b1, b2, b3 = st.sidebar.columns(3)
-b1.button('⏸ Pause' if st.session_state['playing'] else '▶ Play', on_click=_toggle, key='btn_play')
-b2.button('⏮ Reset', on_click=_reset, key='btn_reset')
-b3.button('⏭ Step', on_click=_step, key='btn_step')
-speed = st.sidebar.select_slider('Speed', options=[0.5, 1, 2, 4], value=1,
-                                 format_func=lambda x: f'{x} record/s')
-st.sidebar.slider('Record (15-min steps)', 0, n - 1, key='pos')
-show_proxy = st.sidebar.checkbox('Show proxy label (reference only)', value=(source == 'Demo scenarios'))
+b1.button('⏸' if st.session_state['playing'] else '▶', on_click=_toggle, key='btn_play',
+          help='Play / pause the simulated live stream')
+b2.button('⏮', on_click=_reset, key='btn_reset', help='Back to the first record')
+b3.button('⏭', on_click=_step, key='btn_step', help='Next record')
+st.sidebar.slider('Record', 0, n - 1, key='pos')
+speed_name = st.sidebar.select_slider('Speed', options=['Slow', 'Normal', 'Fast'], value='Normal')
+speed = {'Slow': 0.5, 'Normal': 1.0, 'Fast': 2.0}[speed_name]
+signal_options = ['QLT', 'UL', 'UG'] + (['VALVDP'] if df['VALVDP'].notna().any() else [])
+signals = st.sidebar.multiselect('Signals', signal_options, default=['QLT'])
+if not signals:
+    signals = ['QLT']
 pos = st.session_state['pos']
+show_proxy = source == 'Demo scenarios'
 
 # ---------------------------------------------------------------- predictions
 models, background, model_source = get_models(held_out)
@@ -290,247 +301,265 @@ hgb_cls, lr_cls = pr['HistGB_class'], pr['LogReg_class']
 priority, p_col = sc.priority_for(hgb_cls, lr_cls, q['status'])
 recent = preds['HistGB_class'].iloc[max(0, pos - sc.RECENT_N + 1):pos + 1]
 recent_share = float((recent == sc.CLASS_SEVERE).mean())
+exp = explain_cached(df.iloc[[pos]][sc.FEATURES], held_out, 'HistGB')
+exp_col = f'phi_{sc.SHORT[hgb_cls]}'
+pushes = exp['table'][exp['table'][exp_col] > 0].sort_values(exp_col, ascending=False)
+drivers = list(zip(pushes['feature'], pushes[exp_col]))
+tcv_val = None if pd.isna(row['topside_choke_TCV_pct_open']) else float(row['topside_choke_TCV_pct_open'])
+gl_val = None if pd.isna(row['gas_lift_MMSCFD']) else float(row['gas_lift_MMSCFD'])
+rec = sc.recommend(dict(
+    hgb_class=hgb_cls, lr_class=lr_cls, agree=bool(pr['agree']), quality_status=q['status'],
+    quality_note=q['note'], gas_lift=gl_val, tcv_open=tcv_val, valvdp_available=not pd.isna(row['VALVDP']),
+    time_h=float(row['TIME_h']), recent_severe_share=recent_share, drivers=drivers))
+
+
+# ---------------------------------------------------------------- small html helpers
+def esc(s):
+    return html.escape(str(s), quote=True)
+
+
+def chip(text, colour=None, tip=''):
+    dot = f'<span class="sg-dot" style="background:{colour}"></span>' if colour else ''
+    return f'<span class="sg-chip" title="{esc(tip)}">{dot}{esc(text)}</span>'
+
+
+HERO = {'Monitor': ('MONITOR', 'Flow looks steady'),
+        'Watch': ('WATCH', 'Flow is unsteady'),
+        'High-priority review': ('HIGH-PRIORITY REVIEW', 'Severe-slugging signature'),
+        'Models disagree: engineer review': ('MODELS DISAGREE', 'Engineer review needed'),
+        'Data insufficient': ('DATA INSUFFICIENT', 'Inputs are not reliable')}
 
 # ---------------------------------------------------------------- header
-st.markdown('## 🌊 SlugGuard · flow assurance decision support')
-st.markdown('<div class="sg-banner">🧪 SIMULATION DATA &nbsp;·&nbsp; IDENTIFIES THE <b>CURRENT</b> FLOW STATE '
-            '(proxy label), DOES NOT FORECAST &nbsp;·&nbsp; READ-ONLY, NO EQUIPMENT COMMANDS</div>',
-            unsafe_allow_html=True)
-st.caption(f'**{label}**  ·  record {pos + 1} of {n}  ·  time {row["TIME_h"]:.2f} h')
 if source == 'Demo scenarios':
-    if held_out is None:
-        st.warning('In-sample view: these models were trained on this scenario, so they look better here than '
-                   'they will on a new case. Switch to the Honest view for the real picture (report, Table 3).')
-    else:
-        st.info('Honest view: the models were trained WITHOUT this scenario, as in the leave-one-scenario-out test.')
-for msg in sc.scenario_quality_messages(df) + notes:
-    st.caption('ℹ️ ' + msg)
+    pill1 = ('SIMULATION', 'Simulated OLGA scenarios, not field data.')
+else:
+    pill1 = ('UPLOADED DATA · NOT VALIDATED',
+             'The models were trained on nine simulated scenarios of one design case. '
+             'Their scores for any other system are not validated.')
+st.markdown(
+    '<div class="sg-top"><div class="sg-title">🌊 SlugGuard<span>flow-assurance decision support</span></div><div>'
+    f'<span class="sg-pill" title="{esc(pill1[1])}">{esc(pill1[0])}</span>'
+    '<span class="sg-pill" title="Each record is classified on its own. Nothing here forecasts a future event.">'
+    'IDENTIFIES NOW · NO FORECAST</span>'
+    '<span class="sg-pill" title="The dashboard never sends commands to equipment.">READ-ONLY</span>'
+    '</div></div>', unsafe_allow_html=True)
 
-# KPI row
-k1, k2, k3, k4, k5 = st.columns(5)
-k1.markdown(card('Gradient boosting', sc.SHORT[hgb_cls], f'score {pr["HistGB_conf"]:.2f} (uncalibrated)',
-                 CLASS_COL[hgb_cls]), unsafe_allow_html=True)
-k2.markdown(card('Logistic regression', sc.SHORT[lr_cls], f'score {pr["LogReg_conf"]:.2f} (uncalibrated)',
-                 CLASS_COL[lr_cls]), unsafe_allow_html=True)
-k3.markdown(card('Model agreement', 'Agree' if pr['agree'] else 'Disagree',
-                 'agreement is not proof of correctness', sc.GREEN if pr['agree'] else sc.AMBER),
-            unsafe_allow_html=True)
-q_col = {'ok': sc.GREEN, 'warning': sc.AMBER, 'insufficient': sc.GREY}[q['status']]
-k4.markdown(card('Data quality', {'ok': 'OK', 'warning': 'Warning', 'insufficient': 'Insufficient'}[q['status']],
-                 q['note'] or 'inside the training range', q_col), unsafe_allow_html=True)
-k5.markdown(card('Severe flags, last ~2 h', f'{recent_share:.0%}', f'last {len(recent)} records (backward-looking)',
-                 sc.RED if recent_share >= 0.5 else None), unsafe_allow_html=True)
-st.markdown(f'<div class="sg-priority" style="background:{p_col}22;border:1px solid {p_col};color:{p_col}">'
-            f'PRIORITY: {priority.upper()}</div>', unsafe_allow_html=True)
+# ---------------------------------------------------------------- hero row
+state, subtitle = HERO[priority]
+meta = f'{label}  ·  record {pos + 1}/{n}  ·  t = {row["TIME_h"]:.2f} h' + ('  ·  ▶ replay' if st.session_state['playing'] else '')
+hero_col, prob_col = st.columns([2, 3])
+hero_col.markdown(
+    f'<div class="sg-hero" style="background:linear-gradient(135deg,{p_col}2e,#0e1828 78%);border:1px solid {p_col}88">'
+    '<div class="sg-h">Current assessment</div>'
+    f'<div class="sg-state" style="color:{p_col}">{esc(state)}</div>'
+    f'<div class="sg-sub2">{esc(subtitle)}</div>'
+    f'<div class="sg-meta">{esc(meta)}</div></div>', unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------- trends
+def prob_figure():
+    names = ['Gradient boosting', 'Logistic regression']
+    fig = go.Figure()
+    for cls in (sc.CLASS_STABLE, sc.CLASS_TRANS, sc.CLASS_SEVERE):
+        vals = [float(pr[f'HistGB_p_{sc.SHORT[cls]}']), float(pr[f'LogReg_p_{sc.SHORT[cls]}'])]
+        fig.add_trace(go.Bar(y=names, x=vals, orientation='h', name=sc.SHORT[cls], marker_color=CLASS_COL[cls],
+                             text=[f'{v:.0%}' if v >= 0.07 else '' for v in vals], textposition='inside',
+                             insidetextanchor='middle',
+                             hovertemplate='%{y}: %{x:.2f}<extra>' + sc.SHORT[cls] + '</extra>'))
+    fig.update_layout(template='plotly_dark', barmode='stack', height=118, margin=dict(l=0, r=0, t=24, b=0),
+                      xaxis=dict(range=[0, 1], visible=False), yaxis=dict(autorange='reversed'),
+                      legend=dict(orientation='h', yanchor='bottom', y=1.0, xanchor='left', x=0),
+                      paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    return fig
+
+
+with prob_col:
+    st.markdown('<div class="sg-h">Class scores · uncalibrated</div>', unsafe_allow_html=True)
+    st.plotly_chart(prob_figure())
+    q_col = {'ok': sc.GREEN, 'warning': sc.AMBER, 'insufficient': sc.GREY}[q['status']]
+    q_txt = {'ok': 'Data OK', 'warning': 'Data warning', 'insufficient': 'Data insufficient'}[q['status']]
+    chips = [chip('Models agree' if pr['agree'] else 'Models disagree', sc.GREEN if pr['agree'] else sc.AMBER,
+                  'Agreement is not proof of correctness.'),
+             chip(q_txt, q_col, q['note'] or 'All inputs are inside the training range.'),
+             chip(f'Severe flags {recent_share:.0%} · last 2 h', sc.RED if recent_share >= 0.5 else None,
+                  f'Share of the last {len(recent)} records flagged severe (looks backwards, not forwards).'),
+             chip('Gas lift ' + ('?' if gl_val is None else f'{gl_val:g} MMSCFD')),
+             chip('Choke unrestricted' if tcv_val is None else f'Choke {tcv_val:g}% open')]
+    if source == 'Demo scenarios':
+        chips.append(chip('Honest view', TEAL, 'The models were trained without this scenario.') if held_out
+                     else chip('In-sample', sc.AMBER, 'The models were trained on this scenario, so they look better '
+                                                    'here than on a new case.'))
+    info = sc.scenario_quality_messages(df) + notes + rec['notes']
+    if info:
+        chips.append(chip(f'ⓘ {len(info)} note' + ('s' if len(info) > 1 else ''), None, ' | '.join(info)))
+    st.markdown(''.join(chips), unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------- main chart
 def trend_figure():
     d, p = df.iloc[:pos + 1], preds.iloc[:pos + 1]
-    rows = [('QLT', 'QLT (m³/s)'), ('UL', 'UL (m/s)'), ('UG', 'UG (m/s)')]
-    if df['VALVDP'].notna().any():
-        rows.append(('VALVDP', 'VALVDP (bar)'))
-    strips = [('HistGB_class', 'GradBoost'), ('LogReg_class', 'LogReg')] + ([('proxy', 'Proxy')] if show_proxy else [])
-    n_rows = len(rows) + len(strips)
-    fig = make_subplots(rows=n_rows, cols=1, shared_xaxes=True, vertical_spacing=0.025,
-                        row_heights=[1.0] * len(rows) + [0.22] * len(strips))
-    for i, (c, title) in enumerate(rows, start=1):
-        fig.add_trace(go.Scatter(x=d['TIME_h'], y=d[c], mode='lines', showlegend=False,
-                                 line=dict(color=TEAL, width=1.6)), row=i, col=1)
-        fig.update_yaxes(title_text=title, title_font=dict(size=11), row=i, col=1)
+    titles = {'QLT': 'QLT · m³/s', 'UL': 'UL · m/s', 'UG': 'UG · m/s', 'VALVDP': 'VALVDP · bar'}
+    strips = [('HistGB_class', 'Gradient boosting'), ('LogReg_class', 'Logistic regression')]
+    if show_proxy:
+        strips.append(('proxy', 'Proxy label'))
+    n_rows = len(signals) + len(strips)
+    fig = make_subplots(rows=n_rows, cols=1, shared_xaxes=True, vertical_spacing=0.03,
+                        row_heights=[1.0] * len(signals) + [0.14] * len(strips))
+    marker_cols = [CLASS_COL[c] for c in p['HistGB_class']]
+    for i, s in enumerate(signals, start=1):
+        fig.add_trace(go.Scatter(x=d['TIME_h'], y=d[s], mode='lines+markers', showlegend=False,
+                                 line=dict(color='rgba(45,212,191,0.55)', width=1.2),
+                                 marker=dict(size=5, color=marker_cols)), row=i, col=1)
+        fig.update_yaxes(title_text=titles[s], title_font=dict(size=11), row=i, col=1)
     step = float(np.nanmedian(np.diff(df['TIME_h']))) if n > 2 else 0.25
-    for j, (col_name, title) in enumerate(strips, start=len(rows) + 1):
+    for j, (col_name, title) in enumerate(strips, start=len(signals) + 1):
         series = d['proxy_label'] if col_name == 'proxy' else p[col_name]
         fig.add_trace(go.Bar(x=d['TIME_h'], y=[1] * len(d), width=step, showlegend=False,
                              marker_color=[CLASS_COL[c] for c in series],
                              hovertext=[sc.SHORT[c] for c in series], hoverinfo='text+x'), row=j, col=1)
         fig.update_yaxes(showticklabels=False, showgrid=False, range=[0, 1], title_text=title,
-                         title_font=dict(size=10), row=j, col=1)
+                         title_font=dict(size=9), row=j, col=1)
     fig.update_xaxes(range=[float(df['TIME_h'].min()), float(df['TIME_h'].max())])
     fig.update_xaxes(title_text='Time (h)', row=n_rows, col=1)
-    fig.add_vline(x=float(row['TIME_h']), line_dash='dot', line_color='#9fb3c8', row='all', col='all')
-    fig.update_layout(template='plotly_dark', height=150 * len(rows) + 48 * len(strips) + 70, bargap=0,
-                      margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='rgba(0,0,0,0)',
-                      plot_bgcolor='rgba(0,0,0,0)')
+    fig.update_layout(template='plotly_dark', height=190 * len(signals) + 34 * len(strips) + 60, bargap=0,
+                      margin=dict(l=0, r=0, t=6, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     return fig
 
 
+st.markdown('<div class="sg-h" style="margin-top:.8rem">Trend · dots coloured by the gradient-boosting class</div>',
+            unsafe_allow_html=True)
 st.plotly_chart(trend_figure())
-st.caption('Shown up to the current record only, as in a live view. Strips: predicted class of each model '
-           '(green stable, amber transitional, red severe-slugging signature).')
 
-view = st.radio('Panel', ['Why this flag?', 'Recommendations', 'Model comparison', 'Scenario summary',
-                          'Event log', 'About and limits'], horizontal=True, key='view',
-                label_visibility='collapsed')
+# ---------------------------------------------------------------- why + what to consider
+why_col, rec_col = st.columns(2)
 
-# ---------------------------------------------------------------- panels
-if view == 'Why this flag?':
-    st.markdown('#### Why did the model say this?')
-    cls_choice = st.selectbox('Explain which class?', sc.CLASSES, index=sc.CLASSES.index(hgb_cls),
-                              format_func=lambda c: sc.SHORT[c])
-    mname = st.radio('Model', ['HistGB', 'LogReg'], horizontal=True,
-                     format_func=lambda m: 'Gradient boosting' if m == 'HistGB' else 'Logistic regression')
-    exp = explain_cached(df.iloc[[pos]][sc.FEATURES], held_out, mname)
+
+def why_figure():
     t = exp['table']
-    col = f'phi_{sc.SHORT[cls_choice]}'
-    t2 = t.assign(_abs=t[col].abs()).sort_values('_abs', ascending=True)
-    fig = go.Figure(go.Bar(x=t2[col], y=t2['feature'], orientation='h',
-                           marker_color=[CLASS_COL[sc.CLASS_SEVERE] if v > 0 else TEAL for v in t2[col]],
-                           text=[f'{v:+.3f}' for v in t2[col]], textposition='outside'))
-    fig.update_layout(template='plotly_dark', height=340, margin=dict(l=10, r=40, t=10, b=10),
-                      xaxis_title=f'Contribution to the {sc.SHORT[cls_choice]} score (red pushes up, teal pushes down)',
+    t2 = t.assign(_abs=t[exp_col].abs()).sort_values('_abs', ascending=True)
+    labels = [f'{r.feature} = ' + ('missing' if pd.isna(r.value) else f'{r.value:.3g}') for r in t2.itertuples()]
+    fig = go.Figure(go.Bar(
+        x=t2[exp_col], y=labels, orientation='h',
+        marker_color=[CLASS_COL[sc.CLASS_SEVERE] if v > 0 else TEAL for v in t2[exp_col]],
+        text=[f'{v:+.2f}' for v in t2[exp_col]], textposition='outside',
+        customdata=list(t2['meaning']), hovertemplate='%{customdata}<br>contribution %{x:+.3f}<extra></extra>'))
+    fig.update_layout(template='plotly_dark', height=330, margin=dict(l=0, r=30, t=6, b=0),
+                      xaxis=dict(zeroline=True, zerolinecolor='#3a4d6e', showgrid=False, showticklabels=False),
                       paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-    st.plotly_chart(fig)
-    st.caption(f'Average {sc.SHORT[cls_choice]} score over the reference sample: {exp["base"][sc.SHORT[cls_choice]]:.2f}. '
-               f'For this record: {exp["fx"][sc.SHORT[cls_choice]]:.2f}. The contributions add up exactly to the '
-               f'difference (check: {exp["additivity_error"]:.1e}).')
-    top = t.reindex(t[col].abs().sort_values(ascending=False).index).head(3)
-    for r in top.itertuples():
-        v = getattr(r, col)
-        val = 'missing' if pd.isna(r.value) else f'{r.value:.4g} {r.unit}'
-        st.markdown(f'- **{r.feature}** = {val} {"raises" if v > 0 else "lowers"} the '
-                    f'{sc.SHORT[cls_choice]} score by {abs(v):.2f}')
-    shown = t[['feature', 'meaning', 'value', 'unit', col]].rename(columns={col: 'contribution'})
-    st.dataframe(shown, hide_index=True)
-    st.warning('This explains how the MODEL uses its inputs. It does not show what causes slugging. Gas lift, '
-               'choke and well are fixed inside each scenario, so part of what the model learns is scenario '
-               'identity, and QLT and UL are part of the proxy label itself (report, section 3.4).')
-    with st.expander('Global importance on this scenario (takes a few seconds)'):
-        if st.button('Compute', key='btn_global'):
+    return fig
+
+
+with why_col:
+    st.markdown(f'<div class="sg-h">Why · what pushes the {esc(sc.SHORT[hgb_cls])} score '
+                '(<span style="color:#e5484d">up</span> / <span style="color:#2dd4bf">down</span>)</div>',
+                unsafe_allow_html=True)
+    st.plotly_chart(why_figure())
+
+with rec_col:
+    body = '<div class="sg-h">What to consider</div>'
+    if rec['checks']:
+        body += '<ul class="sg-list">' + ''.join(f'<li>{esc(c)}</li>' for c in rec['checks']) + '</ul>'
+    for o in rec['options']:
+        body += (f'<div class="sg-opt"><b>{esc(o["action"])}</b><details><summary>Evidence and caveat</summary>'
+                 f'<div>{esc(o["evidence"])}<br><i>{esc(o["caveat"])}</i></div></details></div>')
+    body += '<div class="sg-foot">Prompts for engineer review, not instructions.</div>'
+    st.markdown(f'<div class="sg-card">{body}</div>', unsafe_allow_html=True)
+
+# ---------------------------------------------------------------- details (only computed when switched on)
+if st.toggle('Details', value=False, key='details_on'):
+    t_explain, t_models, t_scen, t_log, t_about = st.tabs(['Explain more', 'Models', 'Scenario', 'Event log', 'About'])
+
+    with t_explain:
+        c1, c2 = st.columns(2)
+        cls_choice = c1.selectbox('Class', sc.CLASSES, index=sc.CLASSES.index(hgb_cls),
+                                  format_func=lambda c: sc.SHORT[c], key='d_class')
+        mname = c2.radio('Model', ['HistGB', 'LogReg'], horizontal=True, key='d_model',
+                         format_func=lambda m: 'Gradient boosting' if m == 'HistGB' else 'Logistic regression')
+        e2 = explain_cached(df.iloc[[pos]][sc.FEATURES], held_out, mname)
+        col = f'phi_{sc.SHORT[cls_choice]}'
+        shown = e2['table'][['feature', 'meaning', 'value', 'unit', col]].rename(columns={col: 'contribution'})
+        st.dataframe(shown, hide_index=True)
+        st.caption(f'Average {sc.SHORT[cls_choice]} score over the reference sample {e2["base"][sc.SHORT[cls_choice]]:.2f}; '
+                   f'this record {e2["fx"][sc.SHORT[cls_choice]]:.2f}. Contributions add up exactly '
+                   f'(check {e2["additivity_error"]:.0e}).')
+        if st.button('Global importance on this scenario', key='btn_global'):
             idx = np.linspace(0, n - 1, min(60, n)).astype(int)
             imp = global_cached(df.iloc[idx][sc.FEATURES].reset_index(drop=True), held_out, cls_choice)
             f2 = go.Figure(go.Bar(x=imp.values[::-1], y=list(imp.index[::-1]), orientation='h', marker_color=TEAL))
-            f2.update_layout(template='plotly_dark', height=300, margin=dict(l=10, r=10, t=10, b=10),
+            f2.update_layout(template='plotly_dark', height=280, margin=dict(l=0, r=0, t=6, b=0),
                              xaxis_title=f'Mean |contribution| to the {sc.SHORT[cls_choice]} score (gradient boosting)',
                              paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(f2)
 
-elif view == 'Recommendations':
-    st.markdown('#### Engineering assessment')
-    exp = explain_cached(df.iloc[[pos]][sc.FEATURES], held_out, 'HistGB')
-    col = f'phi_{sc.SHORT[hgb_cls]}'
-    pushes = exp['table'][exp['table'][col] > 0].sort_values(col, ascending=False)
-    drivers = list(zip(pushes['feature'], pushes[col]))
-    tcv_val = None if pd.isna(row['topside_choke_TCV_pct_open']) else float(row['topside_choke_TCV_pct_open'])
-    ctx = dict(hgb_class=hgb_cls, lr_class=lr_cls, agree=bool(pr['agree']), quality_status=q['status'],
-               quality_note=q['note'], gas_lift=None if pd.isna(row['gas_lift_MMSCFD']) else float(row['gas_lift_MMSCFD']),
-               tcv_open=tcv_val, valvdp_available=not pd.isna(row['VALVDP']), time_h=float(row['TIME_h']),
-               recent_severe_share=recent_share, drivers=drivers)
-    rec = sc.recommend(ctx)
-    st.markdown(f'<div class="sg-priority" style="background:{rec["colour"]}22;border:1px solid {rec["colour"]};'
-                f'color:{rec["colour"]}">{rec["priority"].upper()} · {rec["headline"]}</div>', unsafe_allow_html=True)
-    if drivers and rec['priority'] != 'Data insufficient':
-        st.markdown('**Main reasons behind the flag:** ' + ', '.join(f'{f} (+{v:.2f})' for f, v in drivers[:3]))
-    for nt in rec['notes']:
-        st.info(nt)
-    st.markdown('**What to check**')
-    for c in rec['checks']:
-        st.markdown(f'- {c}')
-    if rec['options']:
-        st.markdown('**Options for the engineer to evaluate (not instructions)**')
-        for o in rec['options']:
-            st.markdown(f'**{o["action"]}**  \n*Evidence:* {o["evidence"]}  \n*Caveat:* {o["caveat"]}')
-    st.warning('Decision-support prompts only. Evidence comes from nine simulated scenarios with a proxy label. '
-               'Any real change must follow the approved procedures and be made by the responsible engineer. '
-               'This tool never sends commands to equipment.')
+    with t_models:
+        d, p = df.iloc[:pos + 1], preds.iloc[:pos + 1]
+        m1, m2 = st.columns(2)
+        for cc, name, title in ((m1, 'HistGB', 'Gradient boosting'), (m2, 'LogReg', 'Logistic regression')):
+            fig = go.Figure()
+            for cls in (sc.CLASS_STABLE, sc.CLASS_TRANS, sc.CLASS_SEVERE):
+                fig.add_trace(go.Scatter(x=d['TIME_h'], y=p[f'{name}_p_{sc.SHORT[cls]}'], mode='lines', stackgroup='one',
+                                         name=sc.SHORT[cls], line=dict(width=0.5, color=CLASS_COL[cls]),
+                                         fillcolor=CLASS_RGBA[cls]))
+            fig.update_layout(template='plotly_dark', height=240, title=title, margin=dict(l=0, r=0, t=36, b=0),
+                              yaxis=dict(range=[0, 1]), xaxis_title='Time (h)',
+                              paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            cc.plotly_chart(fig)
+        st.caption(f'The models agree on {float(p["agree"].mean()):.0%} of the {len(p)} records shown.')
 
-elif view == 'Model comparison':
-    st.markdown('#### Do the two models agree?')
-    d, p = df.iloc[:pos + 1], preds.iloc[:pos + 1]
-    c1, c2 = st.columns(2)
-    for cc, name, title in ((c1, 'HistGB', 'Gradient boosting'), (c2, 'LogReg', 'Logistic regression')):
+    with t_scen:
+        share = pd.DataFrame({
+            'Gradient boosting': preds['HistGB_class'].value_counts(normalize=True),
+            'Logistic regression': preds['LogReg_class'].value_counts(normalize=True),
+            'Proxy label': df['proxy_label'].value_counts(normalize=True)}).reindex(sc.CLASSES).fillna(0)
         fig = go.Figure()
         for cls in (sc.CLASS_STABLE, sc.CLASS_TRANS, sc.CLASS_SEVERE):
-            fig.add_trace(go.Scatter(x=d['TIME_h'], y=p[f'{name}_p_{sc.SHORT[cls]}'], mode='lines', stackgroup='one',
-                                     name=sc.SHORT[cls], line=dict(width=0.5, color=CLASS_COL[cls]),
-                                     fillcolor=CLASS_RGBA[cls]))
-        fig.update_layout(template='plotly_dark', height=260, title=title, margin=dict(l=10, r=10, t=40, b=10),
-                          yaxis=dict(range=[0, 1], title='score'), xaxis_title='Time (h)',
+            vals = [float(share.loc[cls, c]) for c in share.columns]
+            fig.add_trace(go.Bar(y=list(share.columns), x=vals, orientation='h', name=sc.SHORT[cls],
+                                 marker_color=CLASS_COL[cls], text=[f'{v:.0%}' if v >= 0.06 else '' for v in vals],
+                                 textposition='inside'))
+        fig.update_layout(template='plotly_dark', barmode='stack', height=190, margin=dict(l=0, r=0, t=24, b=0),
+                          xaxis=dict(range=[0, 1], visible=False), yaxis=dict(autorange='reversed'),
+                          legend=dict(orientation='h', yanchor='bottom', y=1.0, xanchor='left', x=0),
                           paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        cc.plotly_chart(fig)
-    agree_share = float(p['agree'].mean())
-    st.markdown(f'The models agree on **{agree_share:.0%}** of the {len(p)} records shown. '
-                'Where they differ, the dashboard asks for engineer review instead of showing false certainty. '
-                'In the report, the two models disagreed on several scenarios (SC01, SC05, SC07 in all-record tests), '
-                'and neither was clearly better.')
-    last = pd.DataFrame({'time_h': d['TIME_h'].tail(10).round(2).values,
-                         'gradient boosting': p['HistGB_class'].tail(10).map(sc.SHORT).values,
-                         'logistic regression': p['LogReg_class'].tail(10).map(sc.SHORT).values})
-    st.dataframe(last, hide_index=True)
+        st.plotly_chart(fig)
+        st.caption('Whole scenario, all records. '
+                   + ('In-sample: do not read agreement as performance.' if source == 'Demo scenarios' and held_out is None else ''))
+        mt = st.radio('Leave-one-scenario-out check', ['All records', 'After the first 4.1 h'], horizontal=True, key='d_mt')
+        if st.button('Run (about 10 s)', key='btn_loso'):
+            tab = loso_cached(0.0 if mt == 'All records' else sc.STARTUP_HOURS)
+            show = tab.copy()
+            for c in ('dominant_proxy_class', 'HistGB', 'LogReg'):
+                show[c] = show[c].map(sc.SHORT)
+            st.dataframe(show, hide_index=True)
+            st.markdown('  \n'.join(f'**{nm}**: dominant class right for {(tab[nm] == tab["dominant_proxy_class"]).sum()} '
+                                    f'of {len(tab)} scenarios' for nm in ('HistGB', 'LogReg')))
 
-elif view == 'Scenario summary':
-    st.markdown('#### Whole-scenario summary (offline view of the full record)')
-    share = pd.DataFrame({
-        'Gradient boosting': preds['HistGB_class'].value_counts(normalize=True),
-        'Logistic regression': preds['LogReg_class'].value_counts(normalize=True),
-        'Proxy label (reference)': df['proxy_label'].value_counts(normalize=True)}).reindex(sc.CLASSES).fillna(0)
-    share.index = [sc.SHORT[c] for c in share.index]
-    st.dataframe((share * 100).round(1).rename_axis('share of records (%)'))
-    dom = df['proxy_label'].value_counts().index[0]
-    for name, col in (('Gradient boosting', 'HistGB_class'), ('Logistic regression', 'LogReg_class')):
-        maj = preds[col].value_counts().index[0]
-        st.markdown(f'- **{name}**: most common class **{sc.SHORT[maj]}** vs proxy-label dominant class '
-                    f'**{sc.SHORT[dom]}** → {"match" if maj == dom else "no match"}')
-    if source == 'Demo scenarios' and held_out is None:
-        st.warning('In-sample: do not read these matches as performance.')
-    st.markdown('---')
-    st.markdown('**Leave-one-scenario-out check on the nine demo scenarios** (the headline test of the report). '
-                'Each model is trained without the scenario it is tested on.')
-    mt = st.radio('Records used', ['All records', 'Only after the first 4.1 h'], horizontal=True)
-    if st.button('Run the check (about 10 seconds)', key='btn_loso'):
-        tab = loso_cached(0.0 if mt == 'All records' else sc.STARTUP_HOURS)
-        show = tab.copy()
-        for c in ('dominant_proxy_class', 'HistGB', 'LogReg'):
-            show[c] = show[c].map(sc.SHORT)
-        st.dataframe(show, hide_index=True)
-        for name in ('HistGB', 'LogReg'):
-            st.markdown(f'**{name}:** dominant class right for {(tab[name] == tab["dominant_proxy_class"]).sum()} of '
-                        f'{len(tab)} scenarios.')
+    with t_log:
+        d = pd.DataFrame({'record': np.arange(pos + 1), 'time_h': df['TIME_h'].iloc[:pos + 1].round(2).values,
+                          'gradient_boosting': preds['HistGB_class'].iloc[:pos + 1].values,
+                          'logistic_regression': preds['LogReg_class'].iloc[:pos + 1].values,
+                          'data_quality': qual['status'].iloc[:pos + 1].values})
+        d['priority'] = [sc.priority_for(a, b, c)[0] for a, b, c in
+                         zip(d['gradient_boosting'], d['logistic_regression'], d['data_quality'])]
+        key = d['gradient_boosting'] + '|' + d['logistic_regression'] + '|' + d['priority']
+        ev = d[key != key.shift()].copy()
+        ev['agreement'] = np.where(ev['gradient_boosting'] == ev['logistic_regression'], 'agree', 'disagree')
+        ev['gradient_boosting'] = ev['gradient_boosting'].map(sc.SHORT)
+        ev['logistic_regression'] = ev['logistic_regression'].map(sc.SHORT)
+        st.dataframe(ev, hide_index=True)
+        st.download_button('Download (CSV)', data=ev.to_csv(index=False).encode('utf-8'),
+                           file_name='slugguard_event_log.csv', mime='text/csv')
 
-elif view == 'Event log':
-    st.markdown('#### Events up to the current record')
-    d = pd.DataFrame({'record': np.arange(pos + 1), 'time_h': df['TIME_h'].iloc[:pos + 1].round(2).values,
-                      'gradient_boosting': preds['HistGB_class'].iloc[:pos + 1].values,
-                      'logistic_regression': preds['LogReg_class'].iloc[:pos + 1].values,
-                      'data_quality': qual['status'].iloc[:pos + 1].values})
-    d['priority'] = [sc.priority_for(a, b, c)[0] for a, b, c in
-                     zip(d['gradient_boosting'], d['logistic_regression'], d['data_quality'])]
-    key = d['gradient_boosting'] + '|' + d['logistic_regression'] + '|' + d['priority']
-    ev = d[key != key.shift()].copy()
-    ev['agreement'] = np.where(ev['gradient_boosting'] == ev['logistic_regression'], 'agree', 'disagree')
-    ev['gradient_boosting'] = ev['gradient_boosting'].map(sc.SHORT)
-    ev['logistic_regression'] = ev['logistic_regression'].map(sc.SHORT)
-    st.caption('A line is added whenever a class, the model agreement or the priority changes.')
-    st.dataframe(ev, hide_index=True)
-    st.download_button('Download log (CSV)', data=ev.to_csv(index=False).encode('utf-8'),
-                       file_name='slugguard_event_log.csv', mime='text/csv')
-    st.caption('Engineer review is not recorded in this prototype. It would be added with a persistent store.')
-
-else:
-    st.markdown('#### About and limits')
-    st.markdown(f"""
-**What the classes mean.** *Stable*, *Transitional* and *Severe-Slugging Signature* are a **proxy label** built
-from swings in liquid flow and reversals of liquid velocity at the riser outlet (report, equations 3 to 5). They
-are not OLGA flow regimes and have not been checked against OLGA's own flow-regime output.
-
-**Identification, not prediction.** Each record is classified on its own. Nothing here forecasts a future event.
-The "severe flags, last ~2 h" box looks backwards, not forwards.
-
-**Nine scenarios.** Every scenario is almost one class, so the task is effectively nine scenario-level labels.
-On unseen scenarios the logistic regression named the dominant class in 7 of 9 cases and gradient boosting in
-5 of 9. Treat any single flag with care.
-
-**Scores are not probabilities.** They are not calibrated.
-
-**Explanations** are exact Shapley values over all 2⁷ = 128 input coalitions against a 100-record reference
-sample. They match the SHAP ranking of the Colab notebook, but they describe the model, not physical causes.
-
-**Start-up.** The first hours of each simulated run may reflect start-up, and the recommendation panel says so.
-
-**Models in use:** {model_source}. Training data: `data/training_data.csv` (nine OLGA scenarios, proxy labels).
-
-**Safety.** Read-only research prototype. It must not be connected to control systems or used for operational decisions.
-""")
+    with t_about:
+        st.markdown(
+            '- **Classes** are a proxy label from swings in liquid flow and reversals of liquid velocity at the riser '
+            'outlet. They are not OLGA flow regimes.\n'
+            '- **Identification only.** Each record is classified on its own. Nothing forecasts a future event.\n'
+            '- **Nine scenarios of one design case.** On unseen scenarios logistic regression named the dominant class '
+            'in 7 of 9 cases and gradient boosting in 5 of 9.\n'
+            '- **Scores are not calibrated probabilities.** Explanations are exact Shapley values over all 2⁷ input '
+            'coalitions: they describe the model, not physical causes.\n'
+            f'- **Models:** {model_source}. Start-up hours of a run may reflect start-up, not slugging.\n'
+            '- **Read-only research prototype.** Not for operational decisions.')
 
 # ---------------------------------------------------------------- replay loop
 if st.session_state['playing']:
