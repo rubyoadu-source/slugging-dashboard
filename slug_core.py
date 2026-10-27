@@ -301,8 +301,7 @@ def recommend(ctx: dict) -> dict:
 
     if ctx['quality_status'] == 'insufficient':
         out['headline'] = 'The inputs are not good enough to give a recommendation.'
-        out['checks'] = ['Restore or verify the QLT, UL and UG feed.',
-                         'Check units, timestamps and instrument status before using any model output.']
+        out['checks'] = ['Restore or verify the QLT, UL and UG feed', 'Check units, timestamps and instruments']
         return out
 
     if ctx['quality_status'] == 'warning':
@@ -311,9 +310,7 @@ def recommend(ctx: dict) -> dict:
 
     if not ctx['agree']:
         out['headline'] = 'The two models give different answers, so the flag is not reliable.'
-        out['checks'] = ['Inspect the trend panels directly and judge the signals yourself.',
-                         'Compare the explanations of both models for this record.',
-                         'Check input quality and the gas-lift and choke settings entered.']
+        out['checks'] = ['Judge the trends yourself', 'Compare both explanations', 'Check inputs and settings']
         return out
 
     cls = ctx['hgb_class']
@@ -323,30 +320,29 @@ def recommend(ctx: dict) -> dict:
                        CLASS_SEVERE: 'The record carries the severe-slugging signature. Review now.'}[cls]
 
     if cls == CLASS_STABLE:
-        out['checks'] = ['Keep watching the trends and the data-quality status.']
+        out['checks'] = ['Keep monitoring']
     else:
-        out['checks'] = ['Check the pressure and flow evidence in the trends, not only the model flag.',
-                         'Check downstream handling: separator level and capacity, compressor margin.',
-                         'Review the approved slug-management procedure for this well and flowline.']
+        out['checks'] = ['Verify the trend evidence', 'Check separator and compressor margin',
+                         'Review the approved slug procedure']
         if cls == CLASS_SEVERE:
-            out['checks'].append('Escalate to the responsible flow assurance or production engineer.')
+            out['checks'].append('Escalate to the responsible engineer')
 
         top = [f for f, _ in (ctx.get('drivers') or [])[:3]]
         if gl is not None and not pd.isna(gl) and gl <= 5:
             agree_txt = ' The explanation also lists gas lift as a main driver.' if 'gas_lift_MMSCFD' in top else ''
             out['options'].append({
-                'action': 'Consider raising the gas-lift rate, within compressor and riser limits.',
+                'action': 'Raise gas lift, within compressor and riser limits',
                 'evidence': 'Simulated scenarios: Severe share was 100% at 0 MMSCFD, 88.9-94.1% at 5 MMSCFD '
                             'and 1.7% at 10-15 MMSCFD.' + agree_txt,
                 'caveat': 'Gas lift took only four values and was fixed inside each scenario.'})
         if gl is not None and not pd.isna(gl) and gl > 0 and tcv is None:
             out['options'].append({
-                'action': 'Consider closing the topside choke in steps, watching VALVDP and the pressure limits.',
+                'action': 'Close the topside choke in steps, watching VALVDP and pressure limits',
                 'evidence': 'OP1 at 5 MMSCFD: 88.9% Severe unchoked, 3.1% at 10% open, 89.3% Stable at 5% open.',
                 'caveat': 'Each choke setting rests on one scenario. Stay inside separator and pressure limits.'})
         if gl is not None and not pd.isna(gl) and gl == 0:
             out['options'].append({
-                'action': 'Do not rely on choking alone.',
+                'action': 'Do not rely on choking alone',
                 'evidence': 'The OP2 case with a 10% open choke and no gas lift stayed 100% Severe.',
                 'caveat': 'One case only, and it is a different well from the OP1 choke cases.'})
 
@@ -355,7 +351,7 @@ def recommend(ctx: dict) -> dict:
                                 'so this is persistent, not a single noisy record.')
         if ctx['time_h'] is not None and ctx['time_h'] < STARTUP_HOURS:
             out['options'].insert(0, {
-                'action': 'Wait and re-check before acting.',
+                'action': 'Wait and re-check before acting',
                 'evidence': 'In the simulations, the severe labels of the stable scenarios sit in the first 1-3.75 h.',
                 'caveat': 'It is not known whether these hours are numerical start-up or a real response.'})
 
