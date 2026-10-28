@@ -72,7 +72,7 @@ TEAL = '#2dd4bf'
 
 st.markdown("""
 <style>
-.block-container {padding-top: 2.5rem; padding-bottom: 2.0rem; max-width: 1500px;}
+.block-container {padding-top: 2.5rem; padding-bottom: 2.4rem; max-width: 1500px;}
 .sg-top {display:flex; justify-content:space-between; align-items:center; margin-bottom:.7rem;}
 .sg-title {font-size:1.3rem; font-weight:700; letter-spacing:.01em;}
 .sg-title span {color:#7f90a8; font-weight:400; font-size:.9rem; margin-left:.5rem;}
