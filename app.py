@@ -551,6 +551,7 @@ if st.toggle('Details', value=False, key='details_on'):
 
     with t_about:
         st.markdown(
+            '-**Simulation-based proof of concept** \n'
             '- **Classes** are a proxy label from swings in liquid flow and reversals of liquid velocity at the riser '
             'outlet. They are not OLGA flow regimes.\n'
             '- **Identification only.** Each record is classified on its own. Nothing forecasts a future event.\n'
