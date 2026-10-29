@@ -551,15 +551,15 @@ if st.toggle('Details', value=False, key='details_on'):
 
     with t_about:
         st.markdown(
-            '-**Simulation-based proof of concept** \n'
+            '**Simulation-based proof of concept** \n'
             '- **Classes** are a proxy label from swings in liquid flow and reversals of liquid velocity at the riser '
-            'outlet. They are not OLGA flow regimes.\n'
-            '- **Identification only.** Each record is classified on its own. Nothing forecasts a future event.\n'
-            '- **Nine scenarios of one design case.** On unseen scenarios logistic regression named the dominant class '
+            'outlet. They are not flow regimes exported from the OLGA simulations.\n'
+            '- **Identification only.** Each record is classified on its own.\n'
+            '- **Nine scenarios of one design case.** On unseen scenarios, logistic regression named the dominant class '
             'in 7 of 9 cases and gradient boosting in 5 of 9.\n'
             '- **Scores are not calibrated probabilities.** Explanations are exact Shapley values over all 2⁷ input '
             'coalitions: they describe the model, not physical causes.\n'
-            f'- **Models:** {model_source}. Start-up hours of a run may reflect start-up, not slugging.\n'
+            f'- **Models:** {model_source}. Start-up hours (Consider the fist 10 hrs) of a run may reflect start-up, not slugging.\n'
             '- **Read-only research prototype.** Not for operational decisions.')
 
 # ---------------------------------------------------------------- replay loop
